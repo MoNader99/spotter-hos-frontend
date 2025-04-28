@@ -22,7 +22,7 @@ import TripDetails from "./pages/TripDetails";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem("access_token");
+  const isAuthenticated = localStorage.getItem("token");
   return isAuthenticated ? children : <Navigate to="/login" />;
 };
 
