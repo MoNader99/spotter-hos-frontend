@@ -19,6 +19,13 @@ import {
   Select,
   MenuItem,
   TextField,
+  TableContainer,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  Paper,
 } from "@mui/material";
 import {
   MapContainer,
@@ -44,6 +51,7 @@ import {
   fetchTripRoute,
   assignTrip,
   addTripLog,
+  fetchMyTrips,
 } from "../redux/slices/tripsSlice";
 import FuelStopsList from "../components/FuelStopsList";
 import { formatDistance, formatTime } from "../utils/formatters";
@@ -397,7 +405,8 @@ const TripDetails = () => {
   const handleAssignTrip = async () => {
     const result = await dispatch(assignTrip(tripId));
     if (!result.error) {
-      navigate(`/trips/${tripId}/logging`);
+      dispatch(fetchTripDetails(tripId));
+      dispatch(fetchMyTrips());
     }
   };
 
@@ -461,6 +470,22 @@ const TripDetails = () => {
     }
   };
 
+  // Add this before the return statement in TripDetails
+  const processedCoords = Array.isArray(tripRoute?.coordinates)
+    ? processCoordinates(tripRoute.coordinates)
+    : [];
+  const isMapReady =
+    processedCoords.length > 0 &&
+    processedCoords.every(
+      (c) =>
+        Array.isArray(c) &&
+        c.length === 2 &&
+        typeof c[0] === "number" &&
+        typeof c[1] === "number" &&
+        !isNaN(c[0]) &&
+        !isNaN(c[1])
+    );
+
   if (loading) {
     return (
       <Box
@@ -497,7 +522,6 @@ const TripDetails = () => {
           Trip Details
         </Typography>
       </Box>
-
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
           <Card sx={{ mb: 3 }}>
@@ -546,17 +570,7 @@ const TripDetails = () => {
                   Assign Trip
                 </Button>
               )}
-              {currentTrip.status === "IN_PROGRESS" && (
-                <Button
-                  fullWidth
-                  variant="contained"
-                  startIcon={<DirectionsCarIcon />}
-                  onClick={() => navigate(`/trips/${tripId}/logging`)}
-                  sx={{ mt: 2 }}
-                >
-                  Continue Trip
-                </Button>
-              )}
+              {currentTrip.status === "IN_PROGRESS" && null}
             </CardContent>
           </Card>
 
@@ -621,116 +635,161 @@ const TripDetails = () => {
                     </IconButton>
                   </Tooltip>
                 </Box>
-                <MapContainer
-                  key={mapKey}
-                  center={getMapCenter()}
-                  zoom={13}
-                  style={{ height: "100%", width: "100%" }}
-                >
-                  <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                  />
-                  {mapView && (
-                    <MapViewChanger
-                      center={mapView.center}
-                      zoom={mapView.zoom}
+                {/* Only render MapContainer if coordinates are valid and non-empty */}
+                {isMapReady && (
+                  <MapContainer
+                    center={getMapCenter()}
+                    zoom={13}
+                    style={{ height: "100%", width: "100%" }}
+                  >
+                    <TileLayer
+                      url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
                     />
-                  )}
-                  {tripRoute?.coordinates && (
+                    {mapView && (
+                      <MapViewChanger
+                        center={mapView.center}
+                        zoom={mapView.zoom}
+                      />
+                    )}
                     <>
-                      <Marker
-                        position={processCoordinates(tripRoute.coordinates)[0]}
-                      >
+                      <Marker position={processedCoords[0]}>
                         <Popup>Start Location</Popup>
                       </Marker>
-                      <Marker
-                        position={
-                          processCoordinates(tripRoute.coordinates).slice(-1)[0]
-                        }
-                      >
+                      <Marker position={processedCoords.slice(-1)[0]}>
                         <Popup>End Location</Popup>
                       </Marker>
                       <Polyline
-                        positions={processCoordinates(tripRoute.coordinates)}
+                        positions={processedCoords}
                         color="#0d47a1"
                         weight={5}
                         opacity={0.8}
                         dashArray="10, 10"
                       />
-                      <MapBounds
-                        coordinates={processCoordinates(tripRoute.coordinates)}
-                      />
+                      <MapBounds coordinates={processedCoords} />
                     </>
-                  )}
-                  {showFuelStops &&
-                    tripRoute?.fuel_stops?.map((stop, index) => (
-                      <React.Fragment key={`fuel-stop-${index}`}>
-                        <Marker
-                          position={stop.location}
-                          icon={createCustomIcon(
-                            LocalGasStationIcon,
-                            "#1976d2"
-                          )}
-                        >
-                          <Popup>
-                            <Typography variant="subtitle1" gutterBottom>
-                              Fuel Stop {index + 1}
-                            </Typography>
-                            <Typography variant="body2">
-                              Distance:{" "}
-                              {formatDistance(stop.distance_from_start)} miles
-                            </Typography>
-                            <Typography variant="body2">
-                              {stop.gas_stations.length} gas stations nearby
-                            </Typography>
-                          </Popup>
-                        </Marker>
-                        {selectedFuelStop === stop &&
-                          stop.gas_stations.map((station, stationIndex) => (
-                            <Marker
-                              key={`gas-station-${stationIndex}`}
-                              position={station.location}
-                              icon={createCustomIcon(
-                                LocalGasStationIcon,
-                                "#f44336"
-                              )}
-                            >
-                              <Popup>
-                                <Typography variant="subtitle1" gutterBottom>
-                                  {station.name}
-                                </Typography>
-                                {station.brand && (
-                                  <Typography
-                                    variant="body2"
-                                    color="text.secondary"
-                                  >
-                                    Brand: {station.brand}
-                                  </Typography>
+                    {showFuelStops &&
+                      tripRoute?.fuel_stops?.map((stop, index) => (
+                        <React.Fragment key={`fuel-stop-${index}`}>
+                          <Marker
+                            position={stop.location}
+                            icon={createCustomIcon(
+                              LocalGasStationIcon,
+                              "#1976d2"
+                            )}
+                          >
+                            <Popup>
+                              <Typography variant="subtitle1" gutterBottom>
+                                Fuel Stop {index + 1}
+                              </Typography>
+                              <Typography variant="body2">
+                                Distance:{" "}
+                                {formatDistance(stop.distance_from_start)} miles
+                              </Typography>
+                              <Typography variant="body2">
+                                {stop.gas_stations.length} gas stations nearby
+                              </Typography>
+                            </Popup>
+                          </Marker>
+                          {selectedFuelStop === stop &&
+                            stop.gas_stations.map((station, stationIndex) => (
+                              <Marker
+                                key={`gas-station-${stationIndex}`}
+                                position={station.location}
+                                icon={createCustomIcon(
+                                  LocalGasStationIcon,
+                                  "#f44336"
                                 )}
-                                <Typography variant="body2">
-                                  Distance: {formatDistance(station.distance)}{" "}
-                                  miles
-                                </Typography>
-                              </Popup>
-                            </Marker>
-                          ))}
-                      </React.Fragment>
-                    ))}
-                </MapContainer>
+                              >
+                                <Popup>
+                                  <Typography variant="subtitle1" gutterBottom>
+                                    {station.name}
+                                  </Typography>
+                                  {station.brand && (
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      Brand: {station.brand}
+                                    </Typography>
+                                  )}
+                                  <Typography variant="body2">
+                                    Distance: {formatDistance(station.distance)}{" "}
+                                    miles
+                                  </Typography>
+                                </Popup>
+                              </Marker>
+                            ))}
+                        </React.Fragment>
+                      ))}
+                  </MapContainer>
+                )}
               </Box>
             </CardContent>
           </Card>
 
-          {/* Always show Add Log form under the map */}
-          <AddTripLogForm
-            tripId={tripId}
-            onLogAdded={() => dispatch(fetchTripDetails(tripId))}
-          />
+          {/* Only show Add Log form if trip has started and has a driver */}
+          {currentTrip.driver && (
+            <AddTripLogForm
+              tripId={tripId}
+              onLogAdded={() => dispatch(fetchTripDetails(tripId))}
+            />
+          )}
         </Grid>
       </Grid>
+      {/* Only show HOS grid if trip has started and trip has a driver */}
+      {currentTrip.driver && currentTrip.logs && (
+        <HOSGrid logs={currentTrip.logs} />
+      )}
 
-      {currentTrip.logs && <HOSGrid logs={currentTrip.logs} />}
+      {/* Show log history if trip has a driver */}
+      {currentTrip.driver && currentTrip.logs && (
+        <Card sx={{ mt: 4 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Log History
+            </Typography>
+            {currentTrip.logs.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No logs available for this trip.
+              </Typography>
+            ) : (
+              <TableContainer component={Paper} sx={{ maxHeight: 300 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Location</TableCell>
+                      <TableCell>Start Time</TableCell>
+                      <TableCell>End Time</TableCell>
+                      <TableCell>Remarks</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {currentTrip.logs.map((log, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          {STATUS_LABELS[log.status] || log.status}
+                        </TableCell>
+                        <TableCell>{log.location}</TableCell>
+                        <TableCell>
+                          {new Date(log.start_time).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          {log.end_time
+                            ? new Date(log.end_time).toLocaleString()
+                            : "Ongoing"}
+                        </TableCell>
+                        <TableCell>{log.remarks || "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </Container>
   );
 };
