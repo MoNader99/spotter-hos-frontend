@@ -76,12 +76,30 @@ export const assignTrip = createAsyncThunk(
         `/trips/${tripId}/assign/`,
         {},
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
         }
       );
       return response.data;
     } catch (error) {
-      return rejectWithValue(error.response.data);
+      // If we have a response from the server, use its error message
+      if (error.response?.data) {
+        return rejectWithValue({
+          status: error.response.status,
+          detail:
+            error.response.data.detail ||
+            error.response.data.message ||
+            "Failed to assign trip",
+        });
+      }
+
+      // If no response from server (network error, etc)
+      return rejectWithValue({
+        status: 500,
+        detail: "Network error or server is not responding",
+      });
     }
   }
 );
@@ -124,6 +142,55 @@ export const completeTrip = createAsyncThunk(
   }
 );
 
+export const createTrip = createAsyncThunk(
+  "trips/createTrip",
+  async (tripData, { getState, rejectWithValue }) => {
+    try {
+      const token = getAuthToken(getState());
+      const response = await axiosInstance.post("/trips/", tripData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response.data);
+    }
+  }
+);
+
+export const generateTripLogs = createAsyncThunk(
+  "trips/generateTripLogs",
+  async (tripId, { getState, rejectWithValue }) => {
+    try {
+      const token = getAuthToken(getState());
+      const response = await axiosInstance.post(
+        `/trips/${tripId}/generate-logs/`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      return {
+        ...response.data,
+        trip_id: tripId,
+      };
+    } catch (error) {
+      if (error.response?.data) {
+        return rejectWithValue({
+          status: error.response.status,
+          detail: error.response.data.detail || "Failed to generate logs",
+        });
+      }
+      return rejectWithValue({
+        status: 500,
+        detail: "Network error or server is not responding",
+      });
+    }
+  }
+);
+
 const initialState = {
   availableTrips: [],
   myTrips: [],
@@ -143,6 +210,15 @@ const tripsSlice = createSlice({
     clearCurrentTrip: (state) => {
       state.currentTrip = null;
       state.tripRoute = null;
+    },
+    updateTripInMyTrips: (state, action) => {
+      const updatedTrip = action.payload;
+      const index = state.myTrips.findIndex(
+        (trip) => trip.id === updatedTrip.id
+      );
+      if (index !== -1) {
+        state.myTrips[index] = updatedTrip;
+      }
     },
   },
   extraReducers: (builder) => {
@@ -206,7 +282,13 @@ const tripsSlice = createSlice({
       })
       .addCase(assignTrip.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentTrip = action.payload;
+        if (state.currentTrip) {
+          state.currentTrip = {
+            ...state.currentTrip,
+            status: "IN_PROGRESS",
+            driver: action.payload.driver,
+          };
+        }
       })
       .addCase(assignTrip.rejected, (state, action) => {
         state.loading = false;
@@ -239,9 +321,56 @@ const tripsSlice = createSlice({
       .addCase(completeTrip.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
+      })
+      // Create Trip
+      .addCase(createTrip.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(createTrip.fulfilled, (state, action) => {
+        state.loading = false;
+        state.availableTrips = [...state.availableTrips, action.payload];
+      })
+      .addCase(createTrip.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      // Generate Trip Logs
+      .addCase(generateTripLogs.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(generateTripLogs.fulfilled, (state, action) => {
+        state.loading = false;
+        const tripIndex = state.myTrips.findIndex(
+          (trip) => trip.id === action.payload.trip_id
+        );
+        if (tripIndex !== -1) {
+          state.myTrips[tripIndex] = {
+            ...state.myTrips[tripIndex],
+            status: "IN_PROGRESS",
+            logs: action.payload.logs || [],
+            daily_logs: action.payload.daily_logs || [],
+            auto_generated: true,
+          };
+        }
+        if (state.currentTrip?.id === action.payload.trip_id) {
+          state.currentTrip = {
+            ...state.currentTrip,
+            status: "IN_PROGRESS",
+            logs: action.payload.logs || [],
+            daily_logs: action.payload.daily_logs || [],
+            auto_generated: true,
+          };
+        }
+      })
+      .addCase(generateTripLogs.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
       });
   },
 });
 
-export const { clearError, clearCurrentTrip } = tripsSlice.actions;
+export const { clearError, clearCurrentTrip, updateTripInMyTrips } =
+  tripsSlice.actions;
 export default tripsSlice.reducer;

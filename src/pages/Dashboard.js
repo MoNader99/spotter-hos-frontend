@@ -16,6 +16,7 @@ import {
   DirectionsCar as DirectionsCarIcon,
   LocationOn as LocationOnIcon,
   AccessTime as AccessTimeIcon,
+  Add as AddIcon,
 } from "@mui/icons-material";
 import { fetchAvailableTrips } from "../redux/slices/tripsSlice";
 
@@ -87,6 +88,17 @@ const Dashboard = () => {
               Status: {trip.status}
             </Typography>
           </Box>
+
+          {user?.role === "supervisor" && trip.driver && (
+            <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Driver:{" "}
+                {typeof trip.driver === "object"
+                  ? trip.driver.username
+                  : "Assigned"}
+              </Typography>
+            </Box>
+          )}
         </CardContent>
 
         <Box sx={{ p: 2, pt: 0 }}>
@@ -120,10 +132,26 @@ const Dashboard = () => {
 
   return (
     <Container maxWidth="lg">
-      <Box sx={{ mb: 4 }}>
+      <Box
+        sx={{
+          mb: 4,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <Typography variant="h4" component="h1" gutterBottom>
-          Welcome, {user?.username}
+          {user?.role === "supervisor" || user?.role === "admin"
+            ? "Manage Trips"
+            : "Available Trips"}
         </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => navigate("/create-trip")}
+        >
+          Create New Trip
+        </Button>
       </Box>
 
       {error && (
@@ -132,16 +160,16 @@ const Dashboard = () => {
         </Alert>
       )}
 
-      <Typography variant="h5" sx={{ mb: 3 }}>
-        Available Trips
-      </Typography>
-
       <Grid container spacing={3}>
         {availableTrips.length > 0 ? (
           availableTrips.map(renderTripCard)
         ) : (
           <Grid item xs={12}>
-            <Alert severity="info">No available trips at the moment.</Alert>
+            <Alert severity="info">
+              {user?.role === "supervisor" || user?.role === "admin"
+                ? "No trips created yet. Create a new trip to get started."
+                : "No available trips at the moment."}
+            </Alert>
           </Grid>
         )}
       </Grid>

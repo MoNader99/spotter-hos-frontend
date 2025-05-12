@@ -21,6 +21,7 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Logout as LogoutIcon,
+  Add as AddIcon,
 } from "@mui/icons-material";
 import { logout } from "../redux/slices/authSlice";
 import MyTripsSidebar from "./MyTripsSidebar";
@@ -45,6 +46,13 @@ const Layout = () => {
   };
 
   const menuItems = [{ text: "Dashboard", icon: <DashboardIcon />, path: "/" }];
+
+  // Add Create Trip option for all users
+  menuItems.push({
+    text: "Create Trip",
+    icon: <AddIcon />,
+    path: "/create-trip",
+  });
 
   const drawer = (
     <div>
@@ -75,9 +83,11 @@ const Layout = () => {
         </ListItem>
       </List>
       <Divider />
-      <Box sx={{ p: 2 }}>
-        <MyTripsSidebar />
-      </Box>
+      {user?.role !== "supervisor" && user?.role !== "admin" && (
+        <Box sx={{ p: 2 }}>
+          <MyTripsSidebar />
+        </Box>
+      )}
     </div>
   );
 
@@ -102,7 +112,7 @@ const Layout = () => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div">
-            Welcome, {user?.username}
+            Welcome, {user?.username} ({user?.role || "no role"})
           </Typography>
         </Toolbar>
       </AppBar>

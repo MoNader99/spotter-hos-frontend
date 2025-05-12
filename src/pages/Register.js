@@ -10,6 +10,10 @@ import {
   Link,
   Paper,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { register } from "../redux/slices/authSlice";
 
@@ -19,6 +23,7 @@ const Register = () => {
     email: "",
     password: "",
     confirmPassword: "",
+    role: "driver",
   });
   const [errors, setErrors] = useState({});
   const navigate = useNavigate();
@@ -64,9 +69,7 @@ const Register = () => {
     e.preventDefault();
     if (validateForm()) {
       const { confirmPassword, ...registerData } = formData;
-      const result = await dispatch(
-        register({ ...registerData, role: "driver" })
-      );
+      const result = await dispatch(register(registerData));
       if (!result.error) {
         navigate("/");
       }
@@ -157,6 +160,18 @@ const Register = () => {
               error={!!errors.confirmPassword}
               helperText={errors.confirmPassword}
             />
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Role</InputLabel>
+              <Select
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                label="Role"
+              >
+                <MenuItem value="driver">Driver</MenuItem>
+                <MenuItem value="supervisor">Supervisor</MenuItem>
+              </Select>
+            </FormControl>
             <Button
               type="submit"
               fullWidth

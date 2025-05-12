@@ -19,6 +19,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import TripDetails from "./pages/TripDetails";
+import CreateTrip from "./pages/CreateTrip";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -48,6 +49,7 @@ function App() {
               <Route index element={<Dashboard />} />
               <Route path="trips" element={<Navigate to="/" replace />} />
               <Route path="trips/:tripId" element={<TripDetails />} />
+              <Route path="create-trip" element={<CreateTrip />} />
             </Route>
           </Routes>
         </Router>

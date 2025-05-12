@@ -26,6 +26,8 @@ import {
   TableRow,
   TableCell,
   Paper,
+  Switch,
+  FormControlLabel,
 } from "@mui/material";
 import {
   MapContainer,
@@ -52,6 +54,7 @@ import {
   assignTrip,
   addTripLog,
   fetchMyTrips,
+  generateTripLogs,
 } from "../redux/slices/tripsSlice";
 import FuelStopsList from "../components/FuelStopsList";
 import { formatDistance, formatTime } from "../utils/formatters";
@@ -124,115 +127,165 @@ const STATUS_COLORS = {
   D: "#F44336", // Red
   ON: "#FFC107", // Yellow
 };
-function getHourFraction(date) {
-  const d = new Date(date);
-  return d.getHours() + d.getMinutes() / 60;
+
+// Helper function to format UTC time
+function formatUTCTime(utcDate) {
+  const date = new Date(utcDate);
+  return date.toISOString().split("T")[1].substring(0, 5);
 }
+
+// Helper function to format UTC date
+function formatUTCDate(utcDate) {
+  const date = new Date(utcDate);
+  return date.toISOString().split("T")[0];
+}
+
+// Helper function to get interval index for UTC time
+function getIntervalIndex(date) {
+  const d = new Date(date);
+  return d.getUTCHours() * 4 + Math.floor(d.getUTCMinutes() / 15);
+}
+
+// Helper function to calculate duration in hours
+function calculateDuration(startTime, endTime) {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  return ((end - start) / (1000 * 60 * 60)).toFixed(2);
+}
+
+// Helper function to get total hours for a status
 function getTotalHoursForStatus(logs, status) {
   return logs
     .filter((log) => log.status === status)
     .reduce((sum, log) => {
-      const start = getHourFraction(log.start_time);
-      const end = log.end_time ? getHourFraction(log.end_time) : 24;
-      return sum + (end - start);
+      const start = new Date(log.start_time);
+      const end = log.end_time ? new Date(log.end_time) : new Date();
+      return sum + (end - start) / (1000 * 60 * 60);
     }, 0)
-    .toFixed(1);
+    .toFixed(2);
 }
-const HOSGrid = ({ logs }) => {
-  // 96 intervals of 15 minutes each
-  const intervals = Array.from({ length: 96 }, (_, i) => i);
-  // For header: 0, 1, ..., 23
-  const hourLabels = Array.from({ length: 24 }, (_, i) => i);
 
-  // Helper: get interval index for a Date
-  function getIntervalIndex(date) {
-    const d = new Date(date);
-    return d.getHours() * 4 + Math.floor(d.getMinutes() / 15);
+const HOSGrid = ({ logs }) => {
+  // Group logs by date
+  const logsByDate = logs.reduce((acc, log) => {
+    const date = log.date;
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(log);
+    return acc;
+  }, {});
+
+  // 96 intervals of 15 minutes each (24 hours * 4 intervals per hour)
+  const intervals = Array.from({ length: 96 }, (_, i) => i);
+
+  // Helper: format hour for display
+  function formatHour(interval) {
+    const hour = Math.floor(interval / 4);
+    return hour === 0
+      ? "00:00"
+      : hour === 12
+      ? "12:00"
+      : hour < 10
+      ? `0${hour}:00`
+      : `${hour}:00`;
   }
 
   return (
-    <Box
-      sx={{
-        overflowX: "auto",
-        mt: 3,
-        mb: 3,
-        bgcolor: "#fff",
-        borderRadius: 2,
-        p: 2,
-        boxShadow: 1,
-      }}
-    >
-      {/* Header row: hours */}
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: `120px repeat(96, 1fr) 50px`,
-          alignItems: "center",
-          fontWeight: 600,
-          mb: 1,
-        }}
-      >
-        <Box />
-        {intervals.map((i) =>
-          i % 4 === 0 ? (
-            <Box key={i} sx={{ textAlign: "center", fontSize: 12 }}>
-              {i / 4 === 0 ? "Mid" : i / 4}
+    <>
+      {Object.entries(logsByDate)
+        .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+        .map(([date, dayLogs]) => (
+          <Box
+            key={date}
+            sx={{
+              overflowX: "auto",
+              mt: 3,
+              mb: 3,
+              bgcolor: "#fff",
+              borderRadius: 2,
+              p: 2,
+              boxShadow: 1,
+            }}
+          >
+            <Typography variant="h6" gutterBottom>
+              HOS Grid - {date} (UTC)
+            </Typography>
+            {/* Header row: hours */}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: `120px repeat(96, 1fr) 50px`,
+                alignItems: "center",
+                fontWeight: 600,
+                mb: 1,
+              }}
+            >
+              <Box />
+              {intervals.map((i) =>
+                i % 4 === 0 ? (
+                  <Box key={i} sx={{ textAlign: "center", fontSize: 12 }}>
+                    {formatHour(i)}
+                  </Box>
+                ) : (
+                  <Box key={i} />
+                )
+              )}
+              <Box sx={{ textAlign: "center", fontSize: 12, ml: 1 }}>Total</Box>
             </Box>
-          ) : (
-            <Box key={i} />
-          )
-        )}
-        <Box sx={{ textAlign: "center", fontSize: 12, ml: 1 }}>Total</Box>
-      </Box>
-      {Object.keys(STATUS_LABELS).map((status) => (
-        <Box
-          key={status}
-          sx={{
-            display: "grid",
-            gridTemplateColumns: `120px repeat(96, 1fr) 50px`,
-            alignItems: "center",
-            mb: 1,
-          }}
-        >
-          <Box sx={{ fontWeight: 500 }}>{STATUS_LABELS[status]}</Box>
-          {intervals.map((interval) => {
-            // Is there a log for this status that covers this interval?
-            const log = logs.find((l) => {
-              if (l.status !== status) return false;
-              const startIdx = getIntervalIndex(l.start_time);
-              const endIdx = l.end_time ? getIntervalIndex(l.end_time) : 96;
-              return interval >= startIdx && interval < endIdx;
-            });
-            return (
+            {Object.keys(STATUS_LABELS).map((status) => (
               <Box
-                key={interval}
+                key={status}
                 sx={{
-                  height: 24,
-                  bgcolor: log ? STATUS_COLORS[status] : "#f5f5f5",
-                  borderRadius: 1,
-                  opacity: log ? 0.85 : 1,
-                  border: "1px solid #e0e0e0",
+                  display: "grid",
+                  gridTemplateColumns: `120px repeat(96, 1fr) 50px`,
+                  alignItems: "center",
+                  mb: 1,
                 }}
-                title={
-                  log
-                    ? `${STATUS_LABELS[status]}: ${new Date(
-                        log.start_time
-                      ).toLocaleTimeString()} - ${
-                        log.end_time
-                          ? new Date(log.end_time).toLocaleTimeString()
-                          : "Ongoing"
-                      }`
-                    : ""
-                }
-              />
-            );
-          })}
-          <Box sx={{ textAlign: "right", fontWeight: 500, ml: 1 }}>
-            {getTotalHoursForStatus(logs, status)}
+              >
+                <Box sx={{ fontWeight: 500 }}>{STATUS_LABELS[status]}</Box>
+                {intervals.map((interval) => {
+                  // Is there a log for this status that covers this interval?
+                  const log = dayLogs.find((l) => {
+                    if (l.status !== status) return false;
+                    const startIdx = getIntervalIndex(l.start_time);
+                    const endIdx = l.end_time
+                      ? getIntervalIndex(l.end_time)
+                      : 95;
+                    return interval >= startIdx && interval <= endIdx;
+                  });
+                  return (
+                    <Box
+                      key={interval}
+                      sx={{
+                        height: 24,
+                        bgcolor: log ? STATUS_COLORS[status] : "#f5f5f5",
+                        borderRadius: 1,
+                        opacity: log ? 0.85 : 1,
+                        border: "1px solid #e0e0e0",
+                      }}
+                      title={
+                        log
+                          ? `${STATUS_LABELS[status]}: ${formatUTCTime(
+                              log.start_time
+                            )} - ${
+                              log.end_time
+                                ? formatUTCTime(log.end_time)
+                                : "Ongoing"
+                            }`
+                          : ""
+                      }
+                    />
+                  );
+                })}
+                <Box sx={{ textAlign: "right", fontWeight: 500, ml: 1 }}>
+                  {getTotalHoursForStatus(dayLogs, status)}
+                </Box>
+              </Box>
+            ))}
           </Box>
-        </Box>
-      ))}
-    </Box>
+        ))}
+    </>
   );
 };
 
@@ -242,6 +295,60 @@ const STATUS_CHOICES = [
   { value: "D", label: "Driving" },
   { value: "ON", label: "On Duty (Not Driving)" },
 ];
+
+const AddLogEntrySwitcher = ({ tripId, onLogAdded }) => {
+  const [mode, setMode] = useState("manual");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
+  const dispatch = useDispatch();
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    const result = await dispatch(generateTripLogs(tripId));
+    setGenerating(false);
+    if (!result.error) {
+      if (onLogAdded) onLogAdded();
+    } else {
+      setError(result.error?.message || "Failed to auto-generate logs.");
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={mode === "auto"}
+            onChange={() => setMode(mode === "manual" ? "auto" : "manual")}
+            color="primary"
+          />
+        }
+        label={mode === "auto" ? "Auto-Generate Logs" : "Manual Log Entry"}
+      />
+      {mode === "manual" ? (
+        <AddTripLogForm tripId={tripId} onLogAdded={onLogAdded} />
+      ) : (
+        <Box sx={{ mt: 2 }}>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleGenerate}
+            disabled={generating}
+            fullWidth
+          >
+            {generating ? "Generating..." : "Auto-Generate Logs"}
+          </Button>
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 const AddTripLogForm = ({ tripId, onLogAdded }) => {
   const [form, setForm] = useState({
@@ -368,11 +475,11 @@ const TripDetails = () => {
   const { currentTrip, tripRoute, loading, error } = useSelector(
     (state) => state.trips
   );
+  const { user } = useSelector((state) => state.auth);
   const [mapKey, setMapKey] = useState(0);
   const [showFuelStops, setShowFuelStops] = useState(true);
   const [selectedFuelStop, setSelectedFuelStop] = useState(null);
   const [mapView, setMapView] = useState(null);
-  const { user } = useSelector((state) => state.auth);
   const [logData, setLogData] = useState({
     status: "D",
     location: "",
@@ -380,16 +487,6 @@ const TripDetails = () => {
     start_time: new Date(),
     end_time: new Date(),
   });
-  let isDriver = false;
-  if (currentTrip?.driver && user) {
-    if (typeof currentTrip.driver === "object" && currentTrip.driver !== null) {
-      isDriver =
-        currentTrip.driver.username === user.username ||
-        currentTrip.driver.id === user.id;
-    } else {
-      isDriver = currentTrip.driver === user.id;
-    }
-  }
 
   useEffect(() => {
     dispatch(fetchTripDetails(tripId));
@@ -403,10 +500,14 @@ const TripDetails = () => {
   }, [tripRoute]);
 
   const handleAssignTrip = async () => {
-    const result = await dispatch(assignTrip(tripId));
-    if (!result.error) {
-      dispatch(fetchTripDetails(tripId));
-      dispatch(fetchMyTrips());
+    try {
+      const result = await dispatch(assignTrip(tripId));
+      if (!result.error) {
+        dispatch(fetchTripDetails(tripId));
+        dispatch(fetchMyTrips());
+      }
+    } catch (error) {
+      // Handle error silently
     }
   };
 
@@ -434,15 +535,6 @@ const TripDetails = () => {
         return null;
       })
       .filter((coord) => coord !== null);
-  };
-
-  const handleLogChange = (e) => {
-    const { name, value } = e.target;
-    setLogData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleLogDateChange = (name) => (date) => {
-    setLogData((prev) => ({ ...prev, [name]: date }));
   };
 
   const handleLogSubmit = async (e) => {
@@ -485,6 +577,253 @@ const TripDetails = () => {
         !isNaN(c[0]) &&
         !isNaN(c[1])
     );
+
+  const renderDailyLogTable = (logs, date) => {
+    return (
+      <Card sx={{ mt: 4 }} key={date}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Log History -{" "}
+            {new Date(date).toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </Typography>
+          <TableContainer component={Paper} sx={{ maxHeight: 300 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Location</TableCell>
+                  <TableCell>Start Time</TableCell>
+                  <TableCell>End Time</TableCell>
+                  <TableCell>Duration</TableCell>
+                  <TableCell>Remarks</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {logs.map((log, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>
+                      {STATUS_LABELS[log.status] || log.status}
+                    </TableCell>
+                    <TableCell>{log.location}</TableCell>
+                    <TableCell>
+                      {new Date(log.start_time).toLocaleTimeString()}
+                    </TableCell>
+                    <TableCell>
+                      {log.end_time
+                        ? new Date(log.end_time).toLocaleTimeString()
+                        : "Ongoing"}
+                    </TableCell>
+                    <TableCell>
+                      {log.end_time
+                        ? (
+                            (new Date(log.end_time) -
+                              new Date(log.start_time)) /
+                            (1000 * 60 * 60)
+                          ).toFixed(1)
+                        : "-"}{" "}
+                      hrs
+                    </TableCell>
+                    <TableCell>{log.remarks || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {/* Show daily summary for this date */}
+          {currentTrip.daily_logs?.find((dl) => dl.date === date) && (
+            <Box
+              sx={{ mt: 2, p: 2, bgcolor: "background.paper", borderRadius: 1 }}
+            >
+              <Typography variant="subtitle2" gutterBottom>
+                Daily Summary
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={3}>
+                  <Typography variant="body2" color="text.secondary">
+                    Driving Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {currentTrip.daily_logs
+                      .find((dl) => dl.date === date)
+                      .driving_hours.toFixed(1)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={3}>
+                  <Typography variant="body2" color="text.secondary">
+                    On Duty Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {currentTrip.daily_logs
+                      .find((dl) => dl.date === date)
+                      .on_duty_hours.toFixed(1)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={3}>
+                  <Typography variant="body2" color="text.secondary">
+                    Off Duty Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {currentTrip.daily_logs
+                      .find((dl) => dl.date === date)
+                      .off_duty_hours.toFixed(1)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={3}>
+                  <Typography variant="body2" color="text.secondary">
+                    Sleeper Berth Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {currentTrip.daily_logs
+                      .find((dl) => dl.date === date)
+                      .sleeper_berth_hours.toFixed(1)}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderLogHistory = () => {
+    if (!currentTrip?.logs || currentTrip.logs.length === 0) {
+      return (
+        <Card sx={{ mt: 4 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Log History
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              No logs available for this trip.
+            </Typography>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    // Group logs by date
+    const logsByDate = currentTrip.logs.reduce((acc, log) => {
+      const date = log.date;
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(log);
+      return acc;
+    }, {});
+
+    // Sort dates and render a table for each date
+    return Object.keys(logsByDate)
+      .sort()
+      .map((date) => (
+        <Card sx={{ mt: 4 }} key={date}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Log History - {date}
+            </Typography>
+            <TableContainer component={Paper} sx={{ maxHeight: 300 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Location</TableCell>
+                    <TableCell>Start Time (UTC)</TableCell>
+                    <TableCell>End Time (UTC)</TableCell>
+                    <TableCell>Duration</TableCell>
+                    <TableCell>Remarks</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {logsByDate[date].map((log, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>
+                        {STATUS_LABELS[log.status] || log.status}
+                      </TableCell>
+                      <TableCell>{log.location}</TableCell>
+                      <TableCell>{formatUTCTime(log.start_time)}</TableCell>
+                      <TableCell>
+                        {log.end_time ? formatUTCTime(log.end_time) : "Ongoing"}
+                      </TableCell>
+                      <TableCell>
+                        {log.end_time
+                          ? `${calculateDuration(
+                              log.start_time,
+                              log.end_time
+                            )} hrs`
+                          : "-"}
+                      </TableCell>
+                      <TableCell>{log.remarks || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {/* Show daily summary for this date */}
+            {currentTrip.daily_logs?.find((dl) => dl.date === date) && (
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 2,
+                  bgcolor: "background.paper",
+                  borderRadius: 1,
+                }}
+              >
+                <Typography variant="subtitle2" gutterBottom>
+                  Daily Summary
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={3}>
+                    <Typography variant="body2" color="text.secondary">
+                      Driving Hours
+                    </Typography>
+                    <Typography variant="body1">
+                      {currentTrip.daily_logs
+                        .find((dl) => dl.date === date)
+                        .driving_hours.toFixed(2)}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={3}>
+                    <Typography variant="body2" color="text.secondary">
+                      On Duty Hours
+                    </Typography>
+                    <Typography variant="body1">
+                      {currentTrip.daily_logs
+                        .find((dl) => dl.date === date)
+                        .on_duty_hours.toFixed(2)}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={3}>
+                    <Typography variant="body2" color="text.secondary">
+                      Off Duty Hours
+                    </Typography>
+                    <Typography variant="body1">
+                      {currentTrip.daily_logs
+                        .find((dl) => dl.date === date)
+                        .off_duty_hours.toFixed(2)}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={3}>
+                    <Typography variant="body2" color="text.secondary">
+                      Sleeper Berth Hours
+                    </Typography>
+                    <Typography variant="body1">
+                      {currentTrip.daily_logs
+                        .find((dl) => dl.date === date)
+                        .sleeper_berth_hours.toFixed(2)}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+      ));
+  };
 
   if (loading) {
     return (
@@ -570,7 +909,6 @@ const TripDetails = () => {
                   Assign Trip
                 </Button>
               )}
-              {currentTrip.status === "IN_PROGRESS" && null}
             </CardContent>
           </Card>
 
@@ -730,66 +1068,25 @@ const TripDetails = () => {
 
           {/* Only show Add Log form if trip has started and has a driver */}
           {currentTrip.driver && (
-            <AddTripLogForm
-              tripId={tripId}
-              onLogAdded={() => dispatch(fetchTripDetails(tripId))}
-            />
+            <Card sx={{ mt: 3 }}>
+              <CardContent>
+                <AddLogEntrySwitcher
+                  tripId={tripId}
+                  onLogAdded={() => dispatch(fetchTripDetails(tripId))}
+                />
+              </CardContent>
+            </Card>
           )}
         </Grid>
       </Grid>
-      {/* Only show HOS grid if trip has started and trip has a driver */}
+
+      {/* Show HOS Grid if there are logs */}
       {currentTrip.driver && currentTrip.logs && (
         <HOSGrid logs={currentTrip.logs} />
       )}
 
-      {/* Show log history if trip has a driver */}
-      {currentTrip.driver && currentTrip.logs && (
-        <Card sx={{ mt: 4 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Log History
-            </Typography>
-            {currentTrip.logs.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No logs available for this trip.
-              </Typography>
-            ) : (
-              <TableContainer component={Paper} sx={{ maxHeight: 300 }}>
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Location</TableCell>
-                      <TableCell>Start Time</TableCell>
-                      <TableCell>End Time</TableCell>
-                      <TableCell>Remarks</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {currentTrip.logs.map((log, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell>
-                          {STATUS_LABELS[log.status] || log.status}
-                        </TableCell>
-                        <TableCell>{log.location}</TableCell>
-                        <TableCell>
-                          {new Date(log.start_time).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          {log.end_time
-                            ? new Date(log.end_time).toLocaleString()
-                            : "Ongoing"}
-                        </TableCell>
-                        <TableCell>{log.remarks || "-"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Show log history with daily tables */}
+      {currentTrip.driver && currentTrip.logs && renderLogHistory()}
     </Container>
   );
 };
