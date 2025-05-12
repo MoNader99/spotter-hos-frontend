@@ -365,12 +365,23 @@ const AddTripLogForm = ({ tripId, onLogAdded }) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
+
   const handleDateChange = (name) => (date) => {
     setForm((prev) => ({ ...prev, [name]: date }));
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
+
+    // Convert local times to UTC before sending to backend
+    const startTimeUTC = new Date(
+      form.start_time.getTime() - form.start_time.getTimezoneOffset() * 60000
+    );
+    const endTimeUTC = new Date(
+      form.end_time.getTime() - form.end_time.getTimezoneOffset() * 60000
+    );
+
     const result = await dispatch(
       addTripLog({
         tripId,
@@ -379,8 +390,8 @@ const AddTripLogForm = ({ tripId, onLogAdded }) => {
           status: form.status,
           location: form.location,
           remarks: form.remarks,
-          start_time: form.start_time.toISOString(),
-          end_time: form.end_time.toISOString(),
+          start_time: startTimeUTC.toISOString(),
+          end_time: endTimeUTC.toISOString(),
         },
       })
     );
@@ -396,6 +407,7 @@ const AddTripLogForm = ({ tripId, onLogAdded }) => {
       if (onLogAdded) onLogAdded();
     }
   };
+
   return (
     <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
       <Typography variant="h6" gutterBottom>
